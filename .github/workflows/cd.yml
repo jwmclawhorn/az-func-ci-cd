@@ -162,7 +162,7 @@ jobs:
             -n "${{ vars.AZURE_RESOURCE_NAME }}" \
             -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --src-path "${{ steps.resolve-artifact.outputs.artifact-name }}" \
-            --type zip
+            --type zip \
             --async false
 
       - name: Logout of Azure
