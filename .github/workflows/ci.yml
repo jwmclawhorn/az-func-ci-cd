@@ -78,4 +78,11 @@ jobs:
           COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           BRANCH_NAME: ${{ github.head_ref }}
         run: |
-          jf rt upload "${ARTIFACT_NAME}" "gen-virtual/${REPO_NAME}/" --target-props "vcs.pr.number=${PR_NUMBER};vcs.head.sha=${COMMIT_SHA};vcs.branch=${BRANCH_NAME};vcs.repo=${REPO_NAME}" --build-name="${REPO_NAME}" --build-number="${COMMIT_SHA}"
+          jf rt upload "${ARTIFACT_NAME}" "gen-virtual/${REPO_NAME}/" \
+            --target-props "\
+            vcs.pr.number=${PR_NUMBER};\
+            vcs.head.sha=${COMMIT_SHA};\
+            vcs.branch=${BRANCH_NAME};\
+            vcs.repo=${REPO_NAME}" \
+            --build-name="${REPO_NAME}" \
+            --build-number="${COMMIT_SHA}"

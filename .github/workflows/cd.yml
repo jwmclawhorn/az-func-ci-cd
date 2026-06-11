@@ -42,45 +42,155 @@ jobs:
     environment: production
 
     permissions:
-      contents: read
+      contents: write
       id-token: write
+      pull-requests: read
 
     steps:
-      # ── Artifactory ───────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve PR
+        id: resolve-pr
+        run: |
+          PR_DATA=$(gh api \
+            "/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '.[0] | {number: .number, labels: [.labels[].name]}')
+
+          PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number // empty')
+
+          if [[ -z "$PR_NUMBER" ]]; then
+            echo "::error::Could not resolve a PR for commit ${{ github.sha }}. Ensure the push was the result of a merged PR."
+            exit 1
+          fi
+
+          LABELS=$(echo "$PR_DATA" | jq -r '.labels | join(",")')
+
+          echo "pr-number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "pr-labels=${LABELS}" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #${PR_NUMBER} with labels: ${LABELS}"
+
+      - name: Compute next version
+        id: version
+        run: |
+          LABELS="${{ steps.resolve-pr.outputs.pr-labels }}"
+
+          if echo "$LABELS" | grep -q "bump:major"; then
+            BUMP="major"
+          elif echo "$LABELS" | grep -q "bump:minor"; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+
+          LATEST=$(git tag --list 'v*.*.*' --sort=-version:refname | head -n1)
+          if [[ -z "$LATEST" ]]; then
+            LATEST="v0.0.0"
+          fi
+
+          VERSION="${LATEST#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          if [[ "$BUMP" == "major" ]]; then
+            MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+          elif [[ "$BUMP" == "minor" ]]; then
+            MINOR=$((MINOR + 1)); PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "next=${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "bump=${BUMP}" >> "$GITHUB_OUTPUT"
+          echo "Computed next version: ${NEXT} (${BUMP} bump from ${LATEST})"
+
       - name: Set up JFrog CLI
-        uses: jfrog/setup-jfrog-cli@v4
+        uses: jfrog/setup-jfrog-cli@v5
         env:
           JF_URL: https://apeiros.jfrog.io
         with:
           oidc-provider-name: apeiros-dev-jwmclawhorn
-          oidc-audience: ${{ vars.JFROG_OIDC_AUDIENCE }}
+          oidc-audience: apeiros-dev-audience
+          disable-auto-build-publish: true
+          custom-server-id: default
+
+      - name: Resolve Artifact
+        id: resolve-artifact
+        run: |
+          PR_NUMBER="${{ steps.resolve-pr.outputs.pr-number }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+
+          SEARCH_RESULT=$(jf rt search \
+            --props "vcs.pr.number=${PR_NUMBER};vcs.repo=${REPO_NAME}" \
+            "gen-virtual/${REPO_NAME}/*.zip")
+
+          ARTIFACT_PATH=$(echo "$SEARCH_RESULT" | jq -r '.[0].path // empty')
+
+          if [[ -z "$ARTIFACT_PATH" ]]; then
+            echo "::error::No artifact found in Artifactory for PR #${PR_NUMBER} in repo ${REPO_NAME}."
+            exit 1
+          fi
+
+          ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")
+          echo "artifact-path=${ARTIFACT_PATH}" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Download artifact from Artifactory
         run: |
-          ARTIFACT_NAME="${{ github.event.repository.name }}-${{ github.sha }}.zip"
+          ARTIFACT_NAME="${{ steps.resolve-artifact.outputs.artifact-name }}"
           jf rt download \
-            "${{ vars.ARTIFACTORY_REPO }}/${{ github.event.repository.name }}/${ARTIFACT_NAME}" \
+            "gen-virtual/${{ github.event.repository.name }}/${ARTIFACT_NAME}" \
             ./ \
             --flat=true
-          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
 
-      # ── Azure ─────────────────────────────────────────────
-      # Federated credential must trust:
-      #   repo:<org>/<repo>:environment:prd
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy to Function App
-        uses: azure/functions-action@v1
-        with:
-          app-name: ${{ vars.AZURE_FUNCTION_APP_NAME }}
-          package: ${{ env.ARTIFACT_NAME }}
-          # respect-funcignore: true  # uncomment if you use .funcignore
+      - name: Deploy to Azure Function App
+        run: |
+          az functionapp deploy \
+            -n "${{ vars.AZURE_RESOURCE_NAME }}" \
+            -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --src-path "${{ steps.resolve-artifact.outputs.artifact-name }}" \
+            --type zip
+            --async false
 
       - name: Logout of Azure
         if: always()
         run: az logout
+
+      - name: Tag artifact with release version
+        run: |
+          jf rt set-props \
+            "${{ steps.resolve-artifact.outputs.artifact-path }}" \
+            "release.version=${{ steps.version.outputs.next }}"
+
+      - name: Tag commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.next }}" "${{ github.sha }}"
+          git push origin "${{ steps.version.outputs.next }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.next }}" \
+            --title "${{ steps.version.outputs.next }}" \
+            --notes "## What's changed
+
+          PR #${{ steps.resolve-pr.outputs.pr-number }}
+
+          **Bump type:** ${{ steps.version.outputs.bump }}
+          **Deployed to:** \`${{ vars.AZURE_RESOURCE_NAME }}\`
+          **Artifact:** \`${{ steps.resolve-artifact.outputs.artifact-name }}\`" \
+            --target "${{ github.sha }}"
