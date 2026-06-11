@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload artifact to Artifactory
         run: |
-          jf rt upload 
+          jf rt upload \
             "${{ steps.set-artifact-name.outputs.artifact-name }}" \
             "gen-virtual/${{ github.event.repository.name }}/" \
             --target-props "vcs.pr.number=${{ github.event.pull_request.number }};vcs.head.sha=${{ github.event.pull_request.head.sha }};vcs.branch=${{ github.head_ref }};vcs.repo=${{ github.event.repository.name }}" \
