@@ -35,6 +35,24 @@ jobs:
       - name: Configure npm to use JFrog Artifactory
         run: jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
 
+      - name: Delete previous artifact for this PR
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+
+          SEARCH_RESULT=$(jf rt search \
+            --props "vcs.pr.number=${PR_NUMBER};vcs.repo=${REPO_NAME}" \
+            "gen-virtual/${REPO_NAME}/*.zip")
+
+          ARTIFACT_PATH=$(echo "$SEARCH_RESULT" | jq -r '.[0].path // empty')
+
+          if [[ -n "$ARTIFACT_PATH" ]]; then
+            echo "Deleting previous artifact: ${ARTIFACT_PATH}"
+            jf rt delete "$ARTIFACT_PATH" --quiet
+          else
+            echo "No previous artifact found for PR #${PR_NUMBER}. Nothing to clean up."
+          fi
+
       - name: Install dependencies
         run: jf npm install
 
