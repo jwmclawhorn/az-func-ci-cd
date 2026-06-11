@@ -54,13 +54,14 @@ jobs:
 
       - name: Upload artifact to Artifactory
         run: |
+          SANITIZED_BRANCH_NAME=$(echo "${{ github.head_ref }}" | tr -cd '[:alnum:]._-')
           jf rt upload \
             "${{ steps.set-artifact-name.outputs.artifact-name }}" \
             "gen-virtual/${{ github.event.repository.name }}/" \
             --target-props "\
               vcs.pr.number=${{ github.event.pull_request.number }};\
               vcs.head.sha=${{ github.event.pull_request.head.sha }};\
-              vcs.branch=${{ github.head_ref }};\
+              vcs.branch=${SANITIZED_BRANCH_NAME};\
               vcs.repo=${{ github.event.repository.name }}" \
             --build-name="${{ github.event.repository.name }}" \
             --build-number="${{ github.event.pull_request.head.sha }}"
