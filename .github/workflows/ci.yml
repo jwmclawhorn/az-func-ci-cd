@@ -71,14 +71,11 @@ jobs:
             package-lock.json
 
       - name: Upload artifact to Artifactory
+        env:
+          ARTIFACT_NAME: ${{ steps.set-artifact-name.outputs.artifact-name }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH_NAME: ${{ github.head_ref }}
         run: |
-          jf rt upload \
-            "${{ steps.set-artifact-name.outputs.artifact-name }}" \
-            "gen-virtual/${{ github.event.repository.name }}/" \
-            --target-props "\
-            vcs.pr.number=${{ github.event.pull_request.number }};\
-            vcs.head.sha=${{ github.event.pull_request.head.sha }};\
-            vcs.branch=${{ github.head_ref }};\
-            vcs.repo=${{ github.event.repository.name }}" \
-            --build-name="${{ github.event.repository.name }}" \
-            --build-number="${{ github.event.pull_request.head.sha }}"
+          jf rt upload "${ARTIFACT_NAME}" "gen-virtual/${REPO_NAME}/" --target-props "vcs.pr.number=${PR_NUMBER};vcs.head.sha=${COMMIT_SHA};vcs.branch=${BRANCH_NAME};vcs.repo=${REPO_NAME}" --build-name="${REPO_NAME}" --build-number="${COMMIT_SHA}"
