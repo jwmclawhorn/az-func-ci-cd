@@ -59,7 +59,7 @@ jobs:
       - name: Determine artifact name
         id: set-artifact-name
         run: |
-          ARTIFACT_NAME="${{ github.event.repository.name }}-$(git rev-parse --short=6 HEAD).zip"
+          ARTIFACT_NAME="${{ github.event.repository.name }}-${{ github.event.pull_request.head.sha }}.zip"
           echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Package artifact
