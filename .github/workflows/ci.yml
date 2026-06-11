@@ -29,13 +29,13 @@ jobs:
         with:
           oidc-provider-name: apeiros-dev-jwmclawhorn
           oidc-audience: apeiros-dev-audience
-          custom-server-id: default
+          custom-server-id: abc123
 
-      - name: Configure npm to use JFrog Artifactory
-        run: jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
+      # - name: Configure npm to use JFrog Artifactory
+      #   run: jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
 
-      - name: Install dependencies
-        run: jf npm install
+      # - name: Install dependencies
+      #   run: jf npm install
 
       - name: Determine artifact name
         id: set-artifact-name
@@ -47,7 +47,6 @@ jobs:
         run: |
           zip -r "${{ steps.set-artifact-name.outputs.artifact-name }}" \
             src/ \
-            node_modules/ \
             host.json \
             package.json \
             package-lock.json
