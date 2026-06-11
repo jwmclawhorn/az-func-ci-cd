@@ -1,0 +1,68 @@
+name: ci
+
+on: pull_request
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Set up JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JFROG_URL: https://apeiros.jfrog.io
+        with:
+          oidc-provider-name: apeiros-dev-jwmclawhorn
+          oidc-audience: apeiros-dev-audience
+
+      - name: Configure npm to use JFrog Artifactory
+        run: |
+          jf npmc \ 
+            --server-id-resolve=default \
+            --repo-resolve=npm-virtual
+
+      - name: Install dependencies
+        run: jf npm install
+
+      - name: Determine artifact name
+        id: set-artifact-name
+        run: |
+          ARTIFACT_NAME="${{ github.event.repository.name }}-${{ github.event.pull_request.head.sha }}.zip"
+          echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Package artifact
+        run: |
+          zip -r "${{ steps.set-artifact-name.outputs.artifact-name }}" \
+            src/ \
+            node_modules/ \
+            host.json \
+            package.json \
+            package-lock.json
+
+      - name: Upload artifact to Artifactory
+        run: |
+          jf rt upload \
+            "${{ steps.set-artifact-name.outputs.artifact-name }}" \
+            "gen-virtual/${{ github.event.repository.name }}/" \
+            --target-props "\
+              vcs.pr.number=${{ github.event.pull_request.number }};\
+              vcs.head.sha=${{ github.event.pull_request.head.sha }};\
+              vcs.branch=${{ github.head_ref }};\
+              vcs.repo=${{ github.event.repository.name }}" \
+            --build-name="${{ github.event.repository.name }}" \
+            --build-number="${{ github.event.pull_request.head.sha }}"
