@@ -1,0 +1,86 @@
+# ============================================================
+# Reusable CD — Azure Function App (Production)
+#
+# Triggered by calling workflows on push to main (merge).
+# Responsibilities:
+#   1. Authenticate to Artifactory via OIDC
+#   2. Download the artifact built during CI for this commit
+#   3. Authenticate to Azure via OIDC (federated identity)
+#   4. Deploy zip to Azure Function App
+#
+# Deployment targets the `prd` GitHub Environment. Configure
+# required reviewers on that environment in repo settings to
+# gate production deployments behind a manual approval step.
+#
+# Required repository variables (set on the CALLING repo):
+#   ARTIFACTORY_URL            e.g. https://your-org.jfrog.io
+#   ARTIFACTORY_REPO           e.g. generic-local
+#   JFROG_OIDC_PROVIDER        OIDC provider name configured in JFrog
+#   JFROG_OIDC_AUDIENCE        Audience value configured in JFrog
+#   AZURE_CLIENT_ID            App registration client ID
+#   AZURE_TENANT_ID            Entra ID tenant ID
+#   AZURE_SUBSCRIPTION_ID      Target subscription ID
+#   AZURE_FUNCTION_APP_NAME    Name of the Function App resource
+#
+# Permissions granted by this workflow:
+#   id-token: write   — OIDC token minting (JFrog + Azure)
+#   contents: read
+# ============================================================
+
+name: CD — Function App (Production)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # ── Artifactory ───────────────────────────────────────
+      - name: Set up JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JF_URL: https://apeiros.jfrog.io
+        with:
+          oidc-provider-name: apeiros-dev-jwmclawhorn
+          oidc-audience: ${{ vars.JFROG_OIDC_AUDIENCE }}
+
+      - name: Download artifact from Artifactory
+        run: |
+          ARTIFACT_NAME="${{ github.event.repository.name }}-${{ github.sha }}.zip"
+          jf rt download \
+            "${{ vars.ARTIFACTORY_REPO }}/${{ github.event.repository.name }}/${ARTIFACT_NAME}" \
+            ./ \
+            --flat=true
+          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
+
+      # ── Azure ─────────────────────────────────────────────
+      # Federated credential must trust:
+      #   repo:<org>/<repo>:environment:prd
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Function App
+        uses: azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_FUNCTION_APP_NAME }}
+          package: ${{ env.ARTIFACT_NAME }}
+          # respect-funcignore: true  # uncomment if you use .funcignore
+
+      - name: Logout of Azure
+        if: always()
+        run: az logout

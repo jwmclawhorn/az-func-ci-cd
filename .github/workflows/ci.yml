@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -25,7 +23,7 @@ jobs:
           node-version: 24
 
       - name: Set up JFrog CLI
-        uses: jfrog/setup-jfrog-cli@v4
+        uses: jfrog/setup-jfrog-cli@v5
         env:
           JF_URL: https://apeiros.jfrog.io
         with:
@@ -61,8 +59,7 @@ jobs:
       - name: Determine artifact name
         id: set-artifact-name
         run: |
-          SHORT_SHA=$(git rev-parse --short ${{ github.head_ref }})
-          ARTIFACT_NAME="${{ github.event.repository.name }}-${SHORT_SHA}.zip"
+          ARTIFACT_NAME="${{ github.event.repository.name }}-${{ github.sha }}.zip"
           echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Package artifact
