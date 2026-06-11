@@ -29,6 +29,7 @@ jobs:
         with:
           oidc-provider-name: apeiros-dev-jwmclawhorn
           oidc-audience: apeiros-dev-audience
+          custom-server-id: default
 
       - name: Configure npm to use JFrog Artifactory
         run: |
