@@ -25,17 +25,17 @@ jobs:
       - name: Set up JFrog CLI
         uses: jfrog/setup-jfrog-cli@v4
         env:
-          JFROG_URL: https://apeiros.jfrog.io
+          JF_URL: https://apeiros.jfrog.io
         with:
           oidc-provider-name: apeiros-dev-jwmclawhorn
           oidc-audience: apeiros-dev-audience
-          custom-server-id: abc123
+          # custom-server-id: default
 
-      # - name: Configure npm to use JFrog Artifactory
-      #   run: jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
+      - name: Configure npm to use JFrog Artifactory
+        run: jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
 
-      # - name: Install dependencies
-      #   run: jf npm install
+      - name: Install dependencies
+        run: jf npm install
 
       - name: Determine artifact name
         id: set-artifact-name
