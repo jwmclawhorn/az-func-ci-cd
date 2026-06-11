@@ -32,8 +32,7 @@ jobs:
           custom-server-id: default
 
       - name: Configure npm to use JFrog Artifactory
-        run: |
-          jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
+        run: jf npmc --server-id-resolve=default --repo-resolve=npm-virtual
 
       - name: Install dependencies
         run: jf npm install

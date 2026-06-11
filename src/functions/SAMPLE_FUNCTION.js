@@ -5,6 +5,6 @@ app.http('SAMPLE_FUNCTION', {
     authLevel: 'anonymous',
     handler: async (request, context) => {
         context.log('HTTP trigger function processed a request.');
-        return { body: 'Hello, world! This is an update.' };
+        return { body: 'Hello, world.' };
     }
 });
