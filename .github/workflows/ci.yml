@@ -59,6 +59,9 @@ jobs:
       - name: Install dependencies
         run: jf npm install
 
+      - name: Build project
+        run: npm run build
+
       - name: Determine artifact name
         id: set-artifact-name
         run: |
@@ -68,7 +71,7 @@ jobs:
       - name: Package artifact
         run: |
           zip -r "${{ steps.set-artifact-name.outputs.artifact-name }}" \
-            src/ \
+            dist/ \
             host.json \
             package.json
 
