@@ -2,13 +2,23 @@
   "name": "az-func-ci-cd",
   "version": "1.0.0",
   "description": "",
-  "main": "src/functions/*.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "func start",
-    "test": "echo \"No tests yet...\""
+    "build": "rollup -c",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "start": "npm run build && func start"
   },
   "dependencies": {
-    "@azure/functions": "^4.0.0"
+    "@azure/functions": "^4.0.0",
+    "@azure/identity": "^4.13.1",
+    "axios": "^1.17.0",
+    "uuid": "^14.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^29.0.3",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "rollup": "^4.62.0"
+  }
 }
