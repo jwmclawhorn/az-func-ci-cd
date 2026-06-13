@@ -51,6 +51,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: main
 
       - name: Resolve PR
         id: resolve-pr
@@ -183,11 +184,26 @@ jobs:
         if: always()
         run: az logout
 
-      - name: Tag artifact with release version
+      - name: Promote artifact with release version
+        id: promote-artifact
+        env:
+          ARTIFACT_PATH: ${{ steps.resolve-artifact.outputs.artifact-path }}
+          NEXT_VERSION: ${{ steps.version.outputs.next }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ steps.resolve-pr.outputs.pr-number }}
         run: |
+          NEW_PATH="gen-virtual/${REPO_NAME}/${NEXT_VERSION}/${REPO_NAME}-${NEXT_VERSION}.zip"
+
+          jf mv \
+            "${ARTIFACT_PATH}" \
+            "${NEW_PATH}"
+
           jf rt set-props \
-            "${{ steps.resolve-artifact.outputs.artifact-path }}" \
-            "release.version=${{ steps.version.outputs.next }}"
+            "${NEW_PATH}" \
+            "release.version=${NEXT_VERSION}"
+
+          echo "artifact-path=${NEW_PATH}" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=$(basename "${NEW_PATH}")" >> "$GITHUB_OUTPUT"
 
       - name: Tag commit
         run: |
@@ -208,5 +224,5 @@ jobs:
 
           **Bump type:** ${{ steps.version.outputs.bump }}
           **Deployed to:** \`${{ vars.AZURE_RESOURCE_NAME }}\`
-          **Artifact:** \`${{ steps.resolve-artifact.outputs.artifact-name }}\`" \
+          **Artifact:** \`${{ steps.promote-artifact.outputs.artifact-name }}\`" \
             --target "${{ github.sha }}"
