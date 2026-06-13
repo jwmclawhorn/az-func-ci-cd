@@ -194,7 +194,7 @@ jobs:
         run: |
           NEW_PATH="gen-virtual/${REPO_NAME}/${NEXT_VERSION}/${REPO_NAME}-${NEXT_VERSION}.zip"
 
-          jf mv \
+          jf rt mv \
             "${ARTIFACT_PATH}" \
             "${NEW_PATH}"
 
