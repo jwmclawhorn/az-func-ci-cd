@@ -1,0 +1,208 @@
+# ============================================================
+# Reusable ED — Environment Deployment, App Service
+#
+# Manually triggered via workflow_dispatch. Deploys any
+# artifact to any environment by version number or PR number.
+#
+# Use cases:
+#   - Deploy a CI build to dev or tst for testing (pr-number)
+#   - Promote a released version to dev or tst (version)
+#   - Roll back production to a known good version (version)
+#
+# Inputs:
+#   environment  — Target environment: dev, tst, or prd
+#   version      — Semantic version tag (e.g. v1.4.1)
+#                  Used for released artifacts. Required for prd.
+#   pr-number    — PR number of the CI build to deploy
+#                  Used for unreleased CI artifacts.
+#                  Restricted to dev and tst only.
+#
+# Exactly one of version or pr-number must be provided.
+# Providing both or neither is a validation error.
+# Providing pr-number with environment prd is a validation error.
+#
+# Artifact resolution:
+#   version provided   → queries Artifactory by release.version + vcs.repo
+#   pr-number provided → queries Artifactory by vcs.pr.number + vcs.repo
+#
+# No slot swap or health check — deployment is direct to the
+# target environment. The GitHub Environment approval rules
+# are the sole gate for each environment:
+#   dev   — developers only, no approval required
+#   tst   — developers only, no approval required
+#   prd   — required reviewer from a separate team (SOD)
+#
+# Environment-scoped variables:
+#   AZURE_APP_SERVICE_NAME and AZURE_RESOURCE_GROUP should be
+#   set on each GitHub Environment (dev, tst, prd) rather than
+#   at the repo level with per-environment suffixes. The correct
+#   values are loaded automatically based on the target
+#   environment selected at dispatch time.
+#
+# Required repository variables (set on each GitHub Environment):
+#   AZURE_APP_SERVICE_NAME   App Service name for this environment
+#   AZURE_RESOURCE_GROUP     Resource group for this environment
+#
+# Required repository variables (set at repo level):
+#   ARTIFACTORY_URL          e.g. https://your-org.jfrog.io
+#   ARTIFACTORY_REPO         e.g. generic-local
+#   ARTIFACTORY_PATH_PREFIX  e.g. my-team
+#   JFROG_OIDC_PROVIDER      OIDC provider name configured in JFrog
+#   JFROG_OIDC_AUDIENCE      Audience value configured in JFrog
+#   AZURE_CLIENT_ID          App registration client ID
+#   AZURE_TENANT_ID          Entra ID tenant ID
+#   AZURE_SUBSCRIPTION_ID    Target subscription ID
+#
+# Required repository secrets (set at repo level):
+#   TEAMS_WEBHOOK_URL        Power Automate Workflow HTTP trigger URL
+#
+# Permissions granted by this workflow:
+#   id-token: write   — OIDC token minting (JFrog + Azure)
+#   contents: read
+# ============================================================
+
+name: ED — App Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - production
+      version:
+        description: "Released version to deploy (e.g. v1.4.1). Required for prd."
+        required: false
+        type: string
+      pr-number:
+        description: "PR number of CI build to deploy. Dev and tst only."
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    environment: ${{ inputs.environment }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # ── Validate inputs ───────────────────────────────────
+      # Enforces mutual exclusivity of version and pr-number,
+      # and restricts pr-number to dev and tst environments.
+      - name: Validate inputs
+        run: |
+          VERSION="${{ inputs.version }}"
+          PR_NUMBER="${{ inputs.pr-number }}"
+          ENV="${{ inputs.environment }}"
+
+          if [[ "$ENV" != "dev" && "$ENV" != "tst" && "$ENV" != "prd" ]]; then
+            echo "::error::Invalid environment '${ENV}'. Must be dev, tst, or prd."
+            exit 1
+          fi
+
+          if [[ -z "$VERSION" && -z "$PR_NUMBER" ]]; then
+            echo "::error::Either version or pr-number must be provided."
+            exit 1
+          fi
+
+          if [[ -n "$VERSION" && -n "$PR_NUMBER" ]]; then
+            echo "::error::Only one of version or pr-number may be provided, not both."
+            exit 1
+          fi
+
+          if [[ -n "$VERSION" && ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version '${VERSION}'. Must be in the format v1.2.3."
+            exit 1
+          fi
+
+          if [[ -n "$PR_NUMBER" && "$ENV" == "prd" ]]; then
+            echo "::error::pr-number cannot be used with environment 'prd'. Unreleased CI artifacts may not be deployed to production. Provide a version instead."
+            exit 1
+          fi
+
+      - name: Set up JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v5
+        env:
+          JF_URL: https://apeiros.jfrog.io
+        with:
+          oidc-provider-name: apeiros-dev-jwmclawhorn
+          oidc-audience: apeiros-dev-audience
+          disable-auto-build-publish: true
+          custom-server-id: default
+
+      # Resolves the artifact path from Artifactory using
+      # whichever identifier was provided:
+      #   version    → queries by release.version + vcs.repo
+      #   pr-number  → queries by vcs.pr.number + vcs.repo
+      - name: Resolve artifact path from Artifactory
+        id: resolve-artifact
+        run: |
+          REPO_NAME="${{ github.event.repository.name }}"
+          VERSION="${{ inputs.version }}"
+          PR_NUMBER="${{ inputs.pr-number }}"
+
+          if [[ -n "$VERSION" ]]; then
+            PROPS="release.version=${VERSION};vcs.repo=${REPO_NAME}"
+            IDENTIFIER="version ${VERSION}"
+          else
+            PROPS="vcs.pr.number=${PR_NUMBER};vcs.repo=${REPO_NAME}"
+            IDENTIFIER="PR #${PR_NUMBER}"
+          fi
+
+          SEARCH_RESULT=$(jf rt search \
+            --props "$PROPS" \
+            "gen-virtual/${REPO_NAME}/*.zip")
+
+          ARTIFACT_PATH=$(echo "$SEARCH_RESULT" | jq -r '.[0].path // empty')
+
+          if [[ -z "$ARTIFACT_PATH" ]]; then
+            echo "::error::No artifact found in Artifactory for ${IDENTIFIER} in repo ${REPO_NAME}."
+            exit 1
+          fi
+
+          ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")
+          echo "artifact-path=${ARTIFACT_PATH}" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+          echo "identifier=${IDENTIFIER}" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifact from Artifactory
+        run: |
+          jf rt download \
+            "${{ steps.resolve-artifact.outputs.artifact-path }}" \
+            ./ \
+            --flat=true
+
+      # ── Azure ─────────────────────────────────────────────
+      # Federated credential must be configured in Entra ID to
+      # trust tokens issued for:
+      #   repo:<org>/<repo>:environment:dev
+      #   repo:<org>/<repo>:environment:tst
+      #   repo:<org>/<repo>:environment:prd
+      - name: Login to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Function App
+        run: |
+          az functionapp deploy \
+            -n "${{ vars.AZURE_RESOURCE_NAME }}" \
+            -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --src-path "${{ steps.resolve-artifact.outputs.artifact-name }}" \
+            --type zip \
+            --async false
+
+      - name: Logout of Azure
+        if: always()
+        run: az logout
