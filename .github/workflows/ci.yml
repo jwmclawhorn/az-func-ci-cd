@@ -70,8 +70,7 @@ jobs:
           zip -r "${{ steps.set-artifact-name.outputs.artifact-name }}" \
             src/ \
             host.json \
-            package.json \
-            package-lock.json
+            package.json
 
       - name: Upload artifact to Artifactory
         env:
