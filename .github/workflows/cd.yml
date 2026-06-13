@@ -199,7 +199,8 @@ jobs:
 
           jf rt mv \
             "${ARTIFACT_PATH}" \
-            "${NEW_PATH}"
+            "${NEW_PATH}" \
+            --flat=true
 
           jf rt set-props \
             "${NEW_PATH}" \
