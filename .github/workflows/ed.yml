@@ -104,8 +104,8 @@ jobs:
           PR_NUMBER="${{ inputs.pr-number }}"
           ENV="${{ inputs.environment }}"
 
-          if [[ "$ENV" != "dev" && "$ENV" != "tst" && "$ENV" != "prd" ]]; then
-            echo "::error::Invalid environment '${ENV}'. Must be dev, tst, or prd."
+          if [[ "$ENV" != "dev" && "$ENV" != "test" && "$ENV" != "production" ]]; then
+            echo "::error::Invalid environment '${ENV}'. Must be dev, test, or production."
             exit 1
           fi
 
@@ -124,8 +124,8 @@ jobs:
             exit 1
           fi
 
-          if [[ -n "$PR_NUMBER" && "$ENV" == "prd" ]]; then
-            echo "::error::pr-number cannot be used with environment 'prd'. Unreleased CI artifacts may not be deployed to production. Provide a version instead."
+          if [[ -n "$PR_NUMBER" && "$ENV" == "production" ]]; then
+            echo "::error::pr-number cannot be used with environment 'production'. Unreleased CI artifacts may not be deployed to production. Provide a version instead."
             exit 1
           fi
 
