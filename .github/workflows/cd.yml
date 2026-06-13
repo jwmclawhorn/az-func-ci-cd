@@ -157,10 +157,11 @@ jobs:
           echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Download artifact from Artifactory
+        env:
+          ARTIFACT_PATH: ${{ steps.resolve-artifact.outputs.artifact-path }}
         run: |
-          ARTIFACT_NAME="${{ steps.resolve-artifact.outputs.artifact-name }}"
           jf rt download \
-            "gen-virtual/${{ github.event.repository.name }}/${ARTIFACT_NAME}" \
+            "${ARTIFACT_PATH}" \
             ./ \
             --flat=true
 
@@ -192,7 +193,9 @@ jobs:
           REPO_NAME: ${{ github.event.repository.name }}
           PR_NUMBER: ${{ steps.resolve-pr.outputs.pr-number }}
         run: |
-          NEW_PATH="gen-virtual/${REPO_NAME}/${NEXT_VERSION}/${REPO_NAME}-${NEXT_VERSION}.zip"
+          LOCAL_REPO=$(echo "$ARTIFACT_PATH" | cut -d/ -f1)
+
+          NEW_PATH="${LOCAL_REPO}/${REPO_NAME}/${NEXT_VERSION}/${REPO_NAME}-${NEXT_VERSION}.zip"
 
           jf rt mv \
             "${ARTIFACT_PATH}" \
