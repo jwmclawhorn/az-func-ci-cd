@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -59,7 +62,7 @@ jobs:
       - name: Determine artifact name
         id: set-artifact-name
         run: |
-          ARTIFACT_NAME="${{ github.event.repository.name }}-${{ github.sha }}.zip"
+          ARTIFACT_NAME="${{ github.event.repository.name }}-$(git rev-parse --short HEAD).zip"
           echo "artifact-name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Package artifact
@@ -75,9 +78,9 @@ jobs:
           ARTIFACT_NAME: ${{ steps.set-artifact-name.outputs.artifact-name }}
           REPO_NAME: ${{ github.event.repository.name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
           BRANCH_NAME: ${{ github.head_ref }}
         run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
           jf rt upload "${ARTIFACT_NAME}" "gen-virtual/${REPO_NAME}/" \
             --target-props "\
           vcs.pr.number=${PR_NUMBER};\
