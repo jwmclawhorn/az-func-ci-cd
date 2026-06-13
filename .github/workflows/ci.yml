@@ -87,4 +87,4 @@ jobs:
           vcs.branch=${BRANCH_NAME};\
           vcs.repo=${REPO_NAME}" \
             --build-name="${REPO_NAME}" \
-            --build-number="${COMMIT_SHA}"
+            --build-number="${GITHUB_RUN_ID}"
